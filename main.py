@@ -14,6 +14,8 @@ import colorama
 from colorama import *
 from rich.traceback import install
 from rich.console import Console
+from rich.prompt import Prompt
+from rich.progress import Progress
 from requests_html import HTMLSession
 import requests_random_user_agent
 from openpyxl import Workbook
@@ -22,11 +24,14 @@ from openpyxl.styles import Font
 from openpyxl.drawing.image import Image
 from openpyxl.drawing.image import Image
 import string
+import signal
+import sys
+
 from alive_progress import alive_bar
 
 install()
 console = Console()
-#colorama.init(autoreset=True)
+isExitLoop = True
 
 # Hàm để tạo và ghi dữ liệu vào file Excel
 def write_to_excel(videos, username):
@@ -74,7 +79,13 @@ def write_to_excel(videos, username):
     # Lưu file Excel
     wb.save(excel_file_path)
 
-while True:
+# Hàm để thoát chương trình
+def signal_handler(signal, frame):
+    print("\n[Programs] [Status] Program terminated by user.")
+    sys.exit(0)
+
+
+while isExitLoop:
     try:
         
         #Edit Video Class
@@ -1012,9 +1023,9 @@ while True:
 
                 # Download All Video From Tiktok User Function
                 def api2():
-
                     url = "https://tiktok-video-no-watermark2.p.rapidapi.com/user/posts"
-                    print(Box.DoubleCube(f"""Api: https://tiktok-video-no-watermark2.p.rapidapi.com/ \nExample: @tiktok"""))
+                    print("[API]: https://tiktok-video-no-watermark2.p.rapidapi.com/")
+                    print("[Example]: @tiktok or tiktok")
 
                     key = [
                         "cbb685f815msh9bb9a7c12e7952fp1c55ddjsn1313cb0b6392",
@@ -1022,63 +1033,63 @@ while True:
                         "ae52c34202mshc9cc27d0dfd4288p178654jsnb7a8a5a2042f"
                     ]
                     api_key = random.choice(key)
-
-                    querystring = {"unique_id":"", "count":"35","cursor":"0"}
-                    querystring["unique_id"] = input(f"{Fore.YELLOW}Enter User:{Fore.WHITE} ")
-
+                    # unique_id = Prompt.ask("Enter User:", Fore.YELLOW)
+                    unique_id = input(f"{Fore.YELLOW}Enter User:{Fore.WHITE}")
                     headers = {
                         "X-RapidAPI-Key": api_key,
                         "X-RapidAPI-Host": "tiktok-video-no-watermark2.p.rapidapi.com"
                     }
 
-                    request_data = requests.request("GET", url, headers=headers, params=querystring).json()
-                    username = request_data["data"]["videos"][0]['author']["unique_id"]
+                    cursor = "0"
+                    has_more = True
 
-                    if not os.path.exists(f"./tiktok/{username}"):
-                        os.makedirs(f"./tiktok/{username}")
+                    if not os.path.exists(f"./tiktok/{unique_id}"):
+                        os.makedirs(f"./tiktok/{unique_id}")
 
-                    videos = request_data["data"]["videos"]
+                    all_videos = []  # Initialize an empty list to store all videos
 
-                    print(f"""\n{Fore.CYAN}[Programs] {Fore.GREEN}[Status] {Fore.RED}@{username} {Fore.YELLOW}Have Published {Fore.BLUE}{len(videos)} {Fore.YELLOW}Videos. Downloading them...""")
-                    console.log("[cyan][Status][/cyan] Already Downloaded Videos Will Be Skipped.\n")
+                    while has_more:
+                        querystring = {"unique_id": unique_id, "count": "35", "cursor": cursor}
 
+                        request_data = requests.get(url, headers=headers, params=querystring).json()
+                        videos = request_data["data"]["videos"]
+                        cursor = request_data["data"]["cursor"]
+                        has_more = request_data["data"]["hasMore"]
 
-                    count = 0
-                    for video in videos:
-                        
-                        count += 1
-                        download_url = video["play"]
-                        uri = video["video_id"]
-                        title = video['title']
-                        limit = str(f'{title:80.80}')
-                        print(f"""{Fore.CYAN}[Programs] {Fore.YELLOW}[Title] {Fore.GREEN}{limit}\r""")
-                        # download start time                           
-                        start = time.time()
-                        # data size of each download                                        
-                        chunk_size = 1024
+                        all_videos.extend(videos)  # Append the videos to the all_videos list
 
-                        if not os.path.exists(f"./tiktok/{username}/{uri}.mp4"):
+                        print(f"\n[Programs] [Status] @{unique_id} Have Published {len(videos)} Videos. Downloading them...")
 
-                            video_bytes = requests.get(download_url, stream=True)
-                            total_length = int(video_bytes.headers.get("Content-Length"))
-                            console.log(f"[green][Status][/green] File size: " + "{size:.2f} MB".format(size = total_length / chunk_size /1024)) 
-                            with open(f'./tiktok/{username}/{uri}.mp4', 'wb') as out_file:
-                                out_file.write(video_bytes.content)
-                                end = time.time() 
+                        with Progress() as progress:
+                            task = progress.add_task("[cyan]Downloading", total=len(videos))
 
-                                print(f"{Fore.CYAN}[Programs] {Fore.GREEN}[Status] {Fore.WHITE}Timelapse:{Fore.YELLOW}"+ " %.2fs" % (end - start))
-                                print(f"""{Fore.CYAN}[Programs] {Fore.YELLOW}[File] {Fore.GREEN}{uri}.mp4{Fore.YELLOW} Downloaded\n""")
-                                time.sleep(0.7)
+                            count = 0  # Initialize a count variable to track the number of videos downloaded
                             
-                        else:
-                            print(f"{Fore.CYAN}[Programs] {Fore.YELLOW}[File] {Fore.GREEN}{uri}.mp4{Fore.WHITE} already exists! Skipping...\n")
-                            time.sleep(0.7) 
-                            continue
-                    time.sleep(1) 
-                    console.log(f"[cyan][Status][/cyan] Successfully downloaded [green]{count}[/green] videos ✓")
+                            for video in videos:
+                                uri = video["video_id"]
+
+                                if not os.path.exists(f"./tiktok/{unique_id}/{uri}.mp4"):
+                                    download_url = video["play"]
+
+                                    video_bytes = requests.get(download_url, stream=True)
+                                    total_length = int(video_bytes.headers.get("Content-Length"))
+
+                                    with open(f"./tiktok/{unique_id}/{uri}.mp4", "wb") as out_file:
+                                        for chunk in video_bytes.iter_content(chunk_size=1024):
+                                            out_file.write(chunk)
+                                            count += 1  # Increment the count for each video downloaded
+                                            progress.update(task, completed=count)  # Update the progress based on count
+
+                                    time.sleep(0.7)
+                                else:
+                                    count += 1  # Increment the count for existing videos
+                                    progress.update(task, completed=count)  # Update the progress based on count
+
+                        time.sleep(1)
+                        console.print(f"[cyan][Status][/cyan] Successfully downloaded [green]{len(videos)}[/green] videos ✓")
 
                     # Gọi hàm để ghi dữ liệu vào file Excel
-                    write_to_excel(videos, username)
+                    write_to_excel(all_videos, unique_id)
                     
                 if __name__ == "__main__":
 
@@ -1088,7 +1099,7 @@ while True:
                     banner = f"""{Fore.MAGENTA} TIKTOK"""
                     print(Center.XCenter(banner))
                     print(f'{Fore.GREEN}')
-                    fns = [api1, api2]
+                    fns = [api2]
                     choice(fns)()
                     time.sleep(1)                   
                     print(input(f"\n{Fore.CYAN}[Programs] {Fore.YELLOW}[Status] {Fore.WHITE}Press enter to continue.."))
@@ -1245,7 +1256,7 @@ while True:
 
 
         if __name__ == "__main__":
-            
+            signal.signal(signal.SIGINT, signal_handler)
             os.system("cls" if os.name == "nt" else "clear"); os.system("title MMO by @HengSok" if os.name == "nt" else "")
             txt = f"""{Fore.MAGENTA}
                  Tools download or edit video
@@ -1254,7 +1265,7 @@ while True:
             print(Center.XCenter(txt))
             print(f'{Fore.GREEN}')
             print(Box.DoubleCube("Use arrow key to select the options"))
-            questions = [inquirer.List('list', message=f"{Fore.YELLOW}Select Tools{Fore.WHITE}", choices=[' Edit Video', ' Download Douyin Video', ' Download Tiktok Video', ' Download Kuaishou Video'],),]   
+            questions = [inquirer.List('list', message=f"{Fore.YELLOW}Select Tools{Fore.WHITE}", choices=[' Edit Video', ' Download Douyin Video', ' Download Tiktok Video', ' Download Kuaishou Video', ' Exit Program'],),]   
             answers = inquirer.prompt(questions)
 
             if answers['list'] == ' Edit Video':
@@ -1265,7 +1276,10 @@ while True:
                 dwonTiktok()
             elif answers['list'] == ' Download Kuaishou Video':
                 downKuaishou()
+            elif answers['list'] == ' Exit Program':
+                isExitLoop = False
+                sys.exit(0)
     except:
-        console.log("[red][Error][/red] Program Interupted!")
-        time.sleep(2)
+        # console.log("[red][Error][/red] Program Interupted!")
+        time.sleep(1)
     
